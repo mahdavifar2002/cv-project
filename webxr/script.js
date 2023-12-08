@@ -72,8 +72,9 @@ function getDepthFromImage(image, camera) {
 		formData.append("image", file);
 		formData.append("camPose", JSON.stringify(camPose.toArray()));
 		formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
-
-		const response = await fetch("https://192.168.38.140:5000/upload_image", {method:"POST", body:formData})
+		
+		const hostname = window.location.hostname
+		const response = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
 		.catch(err => {
 			alert(err);
 		});
@@ -237,12 +238,19 @@ async function activateXR() {
 
 	var depthFlag = false;
 
-	// session.addEventListener("select", (event) => {
 	const depthButton = document.getElementById('depth-button');
 	depthButton.addEventListener("click", function() {
 		depthFlag = true;
 	});
 
+	session.addEventListener("select", function() {
+		if (model) {
+			const clone = model.clone();
+			clone.position.copy(reticle.position);
+			scene.add(clone);
+		}
+	});
+	
 	const addButton = document.getElementById('add-button');
 	addButton.addEventListener("click", function() {
 		if (model) {
