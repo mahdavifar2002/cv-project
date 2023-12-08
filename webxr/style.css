@@ -1,0 +1,25 @@
+.xr-button {
+	font-family: "Karla", sans-serif;
+	border: rgb(80, 168, 252) 2px solid;
+	border-radius: 2px;
+	box-sizing: border-box;
+	background: none;
+	height: 55px;
+	min-width: 150px;
+	display: inline-block;
+	position: relative;
+	cursor: pointer;
+	font-size: 18px;
+	color: rgb(80, 168, 252);
+	background-color: rgba(255, 255, 255, 0.7);
+}
+
+.overlay {
+	position: fixed;
+	margin: 50px 50px 50px 50px;
+}
+
+.below-buttons {
+	position: fixed;
+	top: 80%;
+}

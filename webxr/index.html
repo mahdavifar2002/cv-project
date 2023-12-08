@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <link rel='icon' type='image/png' sizes='32x32' href='icon/favicon-32x32.png'>
+  <link rel='icon' type='image/png' sizes='96x96' href='icon/favicon-96x96.png'>
+  <link rel='stylesheet' href='style.css'>
+  <title>Hello WebXR!</title>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@v0.159.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@v0.159.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <!-- mobile console -->
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+  <script>eruda.init();</script>
+</head>
+<body>
+
+<!-- Starting an immersive WebXR session requires user interaction.
+    We start this one with a simple button. -->
+<!-- <button style="z-index:2;position:absolute;width:12rem;">Click Me!</button> -->
+<div id="overlay">
+  <div class="overlay">
+    <div>
+      <button id="xr-button" onclick="onXrButtonClicked()" class="xr-button">Enter AR</button>
+    </div>
+    <div class="below-buttons">
+      <button id="add-button" class="xr-button">Add Model</button>
+      <button id="depth-button" class="xr-button">Add Depth</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="script.js"></script>
+</body>
+</html>
