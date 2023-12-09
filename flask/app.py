@@ -20,8 +20,12 @@ app.config["MODEL_UPLOADS"] = "./models"
 
 # Download the MiDaS
 midas = torch.hub.load('intel-isl/MiDaS', 'MiDaS_small')
-midas.to('cpu')
+
+# Move model to GPU if available
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+midas.to(device)
 midas.eval()
+
 # Input transformation pipeline
 transforms = torch.hub.load('intel-isl/MiDaS', 'transforms')
 transform = transforms.small_transform 
@@ -92,7 +96,7 @@ def upload_image():
             
             image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
-            imgbatch = transform(img).to('cpu')
+            imgbatch = transform(img).to(device)
 
             with torch.no_grad():
                 prediction = midas(imgbatch)
