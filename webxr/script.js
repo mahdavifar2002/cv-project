@@ -243,13 +243,13 @@ async function activateXR() {
 		depthFlag = true;
 	});
 
-	session.addEventListener("select", function() {
-		if (model) {
-			const clone = model.clone();
-			clone.position.copy(reticle.position);
-			scene.add(clone);
-		}
-	});
+	// session.addEventListener("select", function() {
+	// 	if (model) {
+	// 		const clone = model.clone();
+	// 		clone.position.copy(reticle.position);
+	// 		scene.add(clone);
+	// 	}
+	// });
 	
 	const addButton = document.getElementById('add-button');
 	addButton.addEventListener("click", function() {
