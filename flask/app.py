@@ -19,12 +19,26 @@ app.config["MODEL_UPLOADS"] = "./models"
 
 
 # Download the MiDaS
-midas = torch.hub.load('intel-isl/MiDaS', 'MiDaS_small')
-midas.to('cpu')
+# model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
+# model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
+model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
+
+midas = torch.hub.load("intel-isl/MiDaS", model_type)
+
+# Move model to GPU if available
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+# device = torch.device('cpu')
+midas.to(device)
 midas.eval()
+
 # Input transformation pipeline
 transforms = torch.hub.load('intel-isl/MiDaS', 'transforms')
-transform = transforms.small_transform 
+
+if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
+    transform = transforms.dpt_transform
+else:
+    transform = transforms.small_transform
+
 
 def applyMatrix4(mat, vec):
     x = vec[0][0]
@@ -92,7 +106,7 @@ def upload_image():
             
             image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
-            imgbatch = transform(img).to('cpu')
+            imgbatch = transform(img).to(device)
 
             with torch.no_grad():
                 prediction = midas(imgbatch)
@@ -159,8 +173,7 @@ def upload_image():
             
             triangles = np.stack(triangles, axis=0)
     
-            mesh_to_glb(points, triangles)
-
+            # mesh_to_glb(points, triangles)
 
             return jsonify(depth[::step,::step].tolist())
     return render_template("upload_image.html")
