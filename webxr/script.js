@@ -57,7 +57,7 @@ async function createImageFromTexture(gl, texture, width, height) {
 
 	// Turn into Blob
 	const imageBlob = await new Promise((resolve) =>
-		canvas.toBlob(resolve, 'image/jpeg', 1)
+		canvas.toBlob(resolve, 'image/jpeg', 0.75)
 	);
 
 	return imageBlob;
