@@ -74,7 +74,7 @@ async function getDepthFromImage(imageBlob, camera) {
 	formData.append("camPose", JSON.stringify(camPose.toArray()));
 	formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
 	
-	const hostname = window.location.hostname
+	const hostname = window.location.hostname;
 	const response = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
 	.catch(err => {
 		alert(err);
@@ -153,9 +153,16 @@ async function addPointCloud(depth, scene, camera, viewport) {
 		}
 	}
 
+	const depthButton = document.getElementById('depth-button');
+	depthButton.innerHTML = "Add Depth";
+	depthButton.disabled = false;
 }
 
 function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
+	const depthButton = document.getElementById('depth-button');
+	depthButton.innerHTML = "Waiting...";
+	depthButton.disabled = true;
+
 	camera = camera.clone();
 	
 	const pose = frame.getViewerPose(referenceSpace);
