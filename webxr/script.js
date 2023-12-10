@@ -29,7 +29,7 @@ function flipImageVertically(data, width, height) {
 	return data;
 }
 
-function createImageFromTexture(gl, texture, width, height) {
+async function createImageFromTexture(gl, texture, width, height) {
 	// Create a framebuffer backed by the texture
 	var framebuffer = gl.createFramebuffer();
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
@@ -55,33 +55,33 @@ function createImageFromTexture(gl, texture, width, height) {
 	imageData.data.set(data);
 	context.putImageData(imageData, 0, 0);
 
-	var img = new Image();
-	img.src = canvas.toDataURL();
-	return img;
+	// Turn into Blob
+	const imageBlob = await new Promise((resolve) =>
+		canvas.toBlob(resolve, 'image/jpeg', 1)
+	);
+
+	return imageBlob;
 }
 
-function getDepthFromImage(image, camera) {
-	return fetch(image.src)
-	.then(res => res.blob())
-	.then(async blob => {
-		const file = new File([blob], 'capture.png', blob);
-		const camPose = camera.getWorldPosition(new THREE.Vector3())
-		const unproject = camera.matrixWorld.clone().multiply(camera.projectionMatrixInverse);
+async function getDepthFromImage(imageBlob, camera) {
+	imageBlob = await imageBlob;
+	const file = new File([imageBlob], 'capture.jpg', {type: imageBlob.type});
+	const camPose = camera.getWorldPosition(new THREE.Vector3())
+	const unproject = camera.matrixWorld.clone().multiply(camera.projectionMatrixInverse);
 
-		const formData  = new FormData();
-		formData.append("image", file);
-		formData.append("camPose", JSON.stringify(camPose.toArray()));
-		formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
-		
-		const hostname = window.location.hostname
-		const response = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
-		.catch(err => {
-			alert(err);
-		});
-
-		return await response.json();
-		return Array(20).fill().map(() => Array(20).fill(1));
+	const formData  = new FormData();
+	formData.append("image", file);
+	formData.append("camPose", JSON.stringify(camPose.toArray()));
+	formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
+	
+	const hostname = window.location.hostname
+	const response = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
+	.catch(err => {
+		alert(err);
 	});
+
+	return await response.json();
+	return Array(20).fill().map(() => Array(20).fill(1));
 }
 
 function toScreen(ndc, vp) {
@@ -164,9 +164,9 @@ function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
 
 	const binding = new XRWebGLBinding(session, gl);
 	const cameraTexture = binding.getCameraImage(view.camera);
-	const image = createImageFromTexture(gl, cameraTexture, view.camera.width, view.camera.height);
+	const imageBlob = createImageFromTexture(gl, cameraTexture, view.camera.width, view.camera.height);
 	
-	const depth = getDepthFromImage(image, camera);
+	const depth = getDepthFromImage(imageBlob, camera);
 
 	scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
 	addPointCloud(depth, scene, camera, viewport);

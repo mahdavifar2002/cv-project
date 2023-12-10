@@ -123,7 +123,7 @@ def upload_image():
 
                 I8 = (depth * 255.9).astype(np.uint8)
                 img = Image.fromarray(I8)
-                img.save("./images/depth.png")
+                img.save("./images/depth.jpg")
 
             # return render_template("upload_image.html", upload_image=image.filename)
             print("valid image")
