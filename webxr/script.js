@@ -102,16 +102,27 @@ function addSmallCubeAt(vector, scene, transparent = true) {
 	const points = [];
 	points.push(new THREE.Vector3(0, 0, 0));
 	var dotGeometry = new THREE.BufferGeometry().setFromPoints(points);
-	const grayscale = Math.min(1, vector.length() / 3);
-	const dotColor = new THREE.Color(grayscale, grayscale, grayscale);
-	var dotMaterial = new THREE.PointsMaterial( { size: 0.1, color: dotColor } );
-	// dotMaterial.transparent = true;
-	// dotMaterial.opacity = 0;
-	// dotMaterial.blending = THREE.MultiplyBlending;
-	var dot = new THREE.Points( dotGeometry, dotMaterial );
-	dot.position.copy(scene.worldToLocal(vector));
-	dot.name = "point";
-	scene.add( dot );
+	
+	const grayscale = Math.min(1, vector.length() / 5);
+	const dotColor = new THREE.Color(0, grayscale, 0);
+
+	var voidMaterial = new THREE.PointsMaterial( { size: 0.1, color: 0x000000 } );
+	voidMaterial.opacity = 0;
+	voidMaterial.blending = THREE.MultiplyBlending;
+
+	var voidDot = new THREE.Points( dotGeometry, voidMaterial );
+	voidDot.position.copy(scene.worldToLocal(vector));
+	voidDot.name = "point";
+	scene.add( voidDot );
+
+	var colorMaterial = new THREE.PointsMaterial( { size: 0.1, color: dotColor } );
+	colorMaterial.transparent = true;
+	colorMaterial.opacity = 0.2;
+
+	var colorDot = new THREE.Points( dotGeometry, colorMaterial );
+	colorDot.position.copy(scene.worldToLocal(vector));
+	colorDot.name = "point";
+	scene.add( colorDot );
 }
 
 function reconstructFromScreen(pixel, camera, viewport, depth) {
@@ -183,7 +194,7 @@ async function activateXR() {
 	// Create a scene.
 	const scene = new THREE.Scene();
 
-	const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+	const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
 	directionalLight.position.set(10, 15, 10);
 	scene.add(directionalLight);
 
@@ -225,7 +236,7 @@ async function activateXR() {
 	// Load GLTF models.
 	const loader = new GLTFLoader();
 	let reticle;
-	loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/reticle/reticle.gltf", function(gltf) {
+	loader.load("./model/reticle/reticle.gltf", function(gltf) {
 		reticle = gltf.scene;
 		reticle.visible = false;
 		scene.add(reticle);
@@ -258,7 +269,7 @@ async function activateXR() {
 			clone.position.copy(reticle.position);
 			scene.add(clone);
 		}
-	}, false);
+	});
 	
 
 	// Track the previous frame time.
