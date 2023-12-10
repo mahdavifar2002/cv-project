@@ -171,3 +171,7 @@ flask/keys
 # Frontend
 webxr/.vscode
 webxr/keys
+
+node_modules/
+package.json
+package-lock.json

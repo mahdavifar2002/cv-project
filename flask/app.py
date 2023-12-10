@@ -19,9 +19,9 @@ app.config["MODEL_UPLOADS"] = "./models"
 
 
 # Download the MiDaS
-# model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
+model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
 # model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
-model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
+# model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
 
 midas = torch.hub.load("intel-isl/MiDaS", model_type)
 
@@ -187,5 +187,5 @@ def send_uploaded_model(filename=""):
     return send_from_directory(app.config["MODEL_UPLOADS"], filename)
 
 if __name__ == '__main__':
-    context = ("./keys/localhost.pem", "./keys/localhost_nopass.key")
+    context = ("./keys/fullchain.pem", "./keys/privkey.pem")
     app.run(host = '0.0.0.0', ssl_context = context, port = 5000, debug = True)
