@@ -175,7 +175,7 @@ def upload_image():
     
             # mesh_to_glb(points, triangles)
 
-            return jsonify(depth[::step,::step].tolist())
+            return jsonify(depth[::3,::3].tolist())
     return render_template("upload_image.html")
     
 @app.route("/images/<filename>")

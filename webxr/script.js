@@ -98,29 +98,27 @@ function toNDC(p_camera, vp) {
 	return new THREE.Vector3(ndc_x, ndc_y, ndc_z);
 }
 
-function addSmallCubeAt(vector, scene, transparent = true) {
-	const points = [];
-	points.push(new THREE.Vector3(0, 0, 0));
+function addSmallCubesAt(points, scene, transparent = true) {
 	var dotGeometry = new THREE.BufferGeometry().setFromPoints(points);
 	
-	const grayscale = Math.min(1, vector.length() / 5);
-	const dotColor = new THREE.Color(0, grayscale, 0);
+	// const grayscale = Math.min(1, vector.length() / 5);
+	// const dotColor = new THREE.Color(0, grayscale, 0);
 
-	var voidMaterial = new THREE.PointsMaterial( { size: 0.1, color: 0x000000 } );
+	var voidMaterial = new THREE.PointsMaterial( { size: 0.02, color: 0x000000 } );
 	voidMaterial.opacity = 0;
 	voidMaterial.blending = THREE.MultiplyBlending;
 
 	var voidDot = new THREE.Points( dotGeometry, voidMaterial );
-	voidDot.position.copy(scene.worldToLocal(vector));
+	// voidDot.position.copy(scene.worldToLocal(vector));
 	voidDot.name = "point";
 	scene.add( voidDot );
 
-	var colorMaterial = new THREE.PointsMaterial( { size: 0.1, color: dotColor } );
+	var colorMaterial = new THREE.PointsMaterial( { size: 0.02, color: 0x00FF00 } );
 	colorMaterial.transparent = true;
 	colorMaterial.opacity = 0.2;
 
 	var colorDot = new THREE.Points( dotGeometry, colorMaterial );
-	colorDot.position.copy(scene.worldToLocal(vector));
+	// colorDot.position.copy(scene.worldToLocal(vector));
 	colorDot.name = "point";
 	scene.add( colorDot );
 }
@@ -142,16 +140,18 @@ async function addPointCloud(depth, scene, camera, viewport) {
 
 	const width = viewport.width;
 	const height = viewport.height;
-
+	const points = [];
 	for (let i = 0; i < depth.length; i++) {
 		for (let j = 0; j < depth[0].length; j++) {
 			const y = height - Math.floor(height*(i+1)/depth.length);
 			const x = Math.floor(width*j/depth[0].length);
 			const pixel = new THREE.Vector3(x, y, 1);
 			const rec = reconstructFromScreen(pixel, camera, viewport, depth[i][j]);
-			addSmallCubeAt(rec, scene);
+			points.push(scene.worldToLocal(rec));
 		}
 	}
+
+	addSmallCubesAt(points, scene);
 
 	const depthButton = document.getElementById('depth-button');
 	depthButton.innerHTML = "Add Depth";
@@ -243,14 +243,14 @@ async function activateXR() {
 	// Load GLTF models.
 	const loader = new GLTFLoader();
 	let reticle;
-	loader.load("./model/reticle/reticle.gltf", function(gltf) {
+	loader.load("./models/reticle/reticle.gltf", function(gltf) {
 		reticle = gltf.scene;
 		reticle.visible = false;
 		scene.add(reticle);
 	})
 
 	let model;
-	loader.load("./model/astronaut/astronaut.glb", function(gltf) {
+	loader.load("./models/astronaut/astronaut.glb", function(gltf) {
 		model = gltf.scene;
 	});
 
