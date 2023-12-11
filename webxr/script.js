@@ -79,7 +79,6 @@ async function getDepthFromImage(imageBlob, camera) {
 	.then(response => response.arrayBuffer())
 	.then(buffer => {
 		const decodedData = msgpack.decode(new Uint8Array(buffer));
-		console.log(decodedData);
 		return decodedData;
 	}).catch(err => {
 		alert(err);
@@ -141,7 +140,6 @@ function reconstructFromScreen(pixel, camera, viewport, depth) {
 
 async function addPointCloud(depth, scene, camera, viewport) {
 	depth = await depth;
-	// console.log(depth);
 
 	const width = viewport.width;
 	const height = viewport.height;
