@@ -75,12 +75,17 @@ async function getDepthFromImage(imageBlob, camera) {
 	formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
 	
 	const hostname = window.location.hostname;
-	const response = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
-	.catch(err => {
+	const depth = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
+	.then(response => response.arrayBuffer())
+	.then(buffer => {
+		const decodedData = msgpack.decode(new Uint8Array(buffer));
+		console.log(decodedData);
+		return decodedData;
+	}).catch(err => {
 		alert(err);
 	});
 
-	return await response.json();
+	return await depth;
 	return Array(20).fill().map(() => Array(20).fill(1));
 }
 
@@ -104,7 +109,7 @@ function addSmallCubesAt(points, scene, transparent = true) {
 	// const grayscale = Math.min(1, vector.length() / 5);
 	// const dotColor = new THREE.Color(0, grayscale, 0);
 
-	var voidMaterial = new THREE.PointsMaterial( { size: 0.02, color: 0x000000 } );
+	var voidMaterial = new THREE.PointsMaterial( { size: 0.05, color: 0x000000 } );
 	voidMaterial.opacity = 0;
 	voidMaterial.blending = THREE.MultiplyBlending;
 
@@ -113,7 +118,7 @@ function addSmallCubesAt(points, scene, transparent = true) {
 	voidDot.name = "point";
 	scene.add( voidDot );
 
-	var colorMaterial = new THREE.PointsMaterial( { size: 0.02, color: 0x00FF00 } );
+	var colorMaterial = new THREE.PointsMaterial( { size: 0.05, color: 0x00FF00 } );
 	colorMaterial.transparent = true;
 	colorMaterial.opacity = 0.2;
 

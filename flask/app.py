@@ -5,6 +5,7 @@ from flask_cors import CORS, cross_origin
 import torch
 import cv2
 import json
+import msgpack
 import math
 from PIL import Image
 import numpy as np
@@ -104,6 +105,7 @@ def upload_image():
             camPose = np.array(json.loads(request.form["camPose"])).reshape((3,1))
             unprojectMatrix = np.array(json.loads(request.form["unprojectMatrix"])).reshape((4,4))
             
+            print("valid image")
             image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             imgbatch = transform(img).to(device)
@@ -126,7 +128,6 @@ def upload_image():
                 img.save("./images/depth.jpg")
 
             # return render_template("upload_image.html", upload_image=image.filename)
-            print("valid image")
 
             step = 30
             height, width = depth.shape
@@ -174,8 +175,11 @@ def upload_image():
             triangles = np.stack(triangles, axis=0)
     
             # mesh_to_glb(points, triangles)
+            samling_rate = 10
+            sampled_depth = depth[::samling_rate,::samling_rate].tolist()
 
-            return jsonify(depth[::3,::3].tolist())
+            encoded_data = msgpack.packb(sampled_depth)
+            return encoded_data
     return render_template("upload_image.html")
     
 @app.route("/images/<filename>")
