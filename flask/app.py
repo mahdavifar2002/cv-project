@@ -70,7 +70,7 @@ def loss(x, A, b):
     # result = result / np.linalg.norm(result)
     eps = 0.1
     # (abs(result) > eps).sum()
-    err = np.sqrt(abs(result)).sum()
+    err = np.sqrt(result).sum()
     # print(f"x={x} --> loss={err}")
     return err
 
@@ -148,8 +148,14 @@ def upload_image():
                     b.append([-camPose[1][0]])
 
             # equal initial weighting
-            x0 = [5, 5]
-            result = optimize.minimize(loss, x0, args=(A,b), method="Nelder-Mead", bounds=((0, None), (None, None)))
+            x0 = [1, 1]
+
+            # linear constraint: no points be reconstructed below floor
+            lower_bound = np.array(b).reshape(-1)
+            upper_bound = np.inf*np.ones(lower_bound.shape)
+            constraint = optimize.LinearConstraint(A, lower_bound, upper_bound)
+
+            result = optimize.minimize(loss, x0, args=(A,b), constraints=(constraint,), bounds=((0, None), (None, None)))
             m, t = result.x
             print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
             depth = m*depth + t
