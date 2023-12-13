@@ -63,16 +63,42 @@ async function createImageFromTexture(gl, texture, width, height) {
 	return imageBlob;
 }
 
-async function getPointCloudFromImage(imageBlob, camera) {
+function getCameraIntrinsics(projectionMatrix, viewport) {
+	const p = projectionMatrix.elements;
+  
+	// Principal point in pixels (typically at or near the center of the viewport)
+	let u0 = (1 - p[8]) * viewport.width / 2 + viewport.x;
+	let v0 = (1 - p[9]) * viewport.height / 2 + viewport.y;
+  
+	// Focal lengths in pixels (these are equal for square pixels)
+	let ax = viewport.width / 2 * p[0];
+	let ay = viewport.height / 2 * p[5];
+  
+	// Skew factor in pixels (nonzero for rhomboid pixels)
+	let gamma = viewport.width / 2 * p[4];
+  
+	// Merge the calculated intrinsics
+	const K = [	[ax,  gamma,  u0,  0],
+				[0,   ay,     v0,  0],
+				[0,   0,      1,   0]];
+	return K;
+}
+
+async function getPointCloudFromImage(imageBlob, camera, viewport) {
 	imageBlob = await imageBlob;
 	const file = new File([imageBlob], 'capture.jpg', {type: imageBlob.type});
 	const camPose = camera.getWorldPosition(new THREE.Vector3())
 	const unproject = camera.matrixWorld.clone().multiply(camera.projectionMatrixInverse);
+	const K = getCameraIntrinsics(camera.projectionMatrix, viewport);
 
 	const formData  = new FormData();
+	formData.append("captureCount", JSON.stringify(captureCount++));
 	formData.append("image", file);
 	formData.append("camPose", JSON.stringify(camPose.toArray()));
 	formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
+	formData.append("camMatrixWorld", JSON.stringify(camera.matrixWorld.clone().transpose().toArray()));
+	formData.append("camProjectionMatrix", JSON.stringify(camera.projectionMatrix.clone().transpose().toArray()));
+	formData.append("K", JSON.stringify(K));
 	
 	const hostname = window.location.hostname;
 	const points = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
@@ -177,7 +203,7 @@ async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, fr
 	const cameraTexture = binding.getCameraImage(view.camera);
 	const imageBlob = createImageFromTexture(gl, cameraTexture, view.camera.width, view.camera.height);
 	
-	const points = await getPointCloudFromImage(imageBlob, camera);
+	const points = await getPointCloudFromImage(imageBlob, camera, viewport);
 
 	scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
 	// addPointCloud(depth, scene, camera, viewport);
@@ -190,6 +216,7 @@ async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, fr
 }
 
 let xrSession = null;
+let captureCount = 0;
 
 function onXrButtonClicked() {
 	if (!xrSession) {
@@ -351,6 +378,7 @@ async function activateXR() {
 function deativateXR() {
 	xrSession.end();
 	xrSession = null;
+	captureCount = 0;
 }
 
 window.onXrButtonClicked = onXrButtonClicked;

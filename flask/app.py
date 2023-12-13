@@ -9,14 +9,19 @@ import msgpack
 import math
 from PIL import Image
 import numpy as np
+from numpy.linalg import inv
 from scipy import optimize
 from gltf_builder import mesh_to_glb
+# import matplotlib
+# matplotlib.use('Agg')
+# import matplotlib.pyplot as plt
 
 app = Flask(__name__)
 cors = CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
 app.config["IMAGE_UPLOADS"] = "./images"
 app.config["MODEL_UPLOADS"] = "./models"
+cameras = []
 
 
 # Download the MiDaS
@@ -118,6 +123,112 @@ def add_triangles(ind, points, triangles):
     add_triangle_if_small(ind[0][0], ind[0][1], ind[1][1], points, triangles)
     add_triangle_if_small(ind[0][0], ind[1][0], ind[1][1], points, triangles)
 
+def saveCameraDetails(id, camera):
+    with open(f"./images/archive/capture_{id}.txt", "w") as file:
+        file.write(f"camPose =\n{camera.camPose}\n\n")
+        file.write(f"unprojectMatrix =\n{camera.unprojectMatrix}\n\n")
+        file.write(f"camMatrixWorld =\n{camera.camMatrixWorld}\n\n")
+        file.write(f"camProjectionMatrix =\n{camera.camProjectionMatrix}\n\n")
+        file.write(f"K =\n{camera.K}\n\n")
+
+
+class Camera:
+    def __init__(self, camPose, unprojectMatrix, camMatrixWorld, camProjectionMatrix, K):
+        self.camPose = camPose
+        self.unprojectMatrix = unprojectMatrix
+        self.camMatrixWorld = camMatrixWorld
+        self.camProjectionMatrix = camProjectionMatrix
+        self.K = K
+    
+    def T(self):
+        return self.camMatrixWorld[0:3, 3]
+    def R(self):
+        return self.camMatrixWorld[0:3, 0:3]
+    def K3(self):
+        return self.K[0:3, 0:3]
+    
+    def F(self, cam2):
+        cam1 = self
+        T = cam2.T() - cam1.T()
+        T_hat = np.cross(np.eye(3), T.reshape(-1))
+        R = cam2.R() @ cam1.R().T
+        return inv(cam2.K3().T) @ T_hat @ R @ inv(cam1.K3())
+
+
+# def matchPoints():
+#     # Load images
+#     image1 = cv2.imread("./images/archive/capture_0.jpg", 0)
+#     image2 = cv2.imread("./images/archive/capture_1.jpg", 0)
+
+#     # Provide fundamental matrix
+#     F = cameras[0].F(cameras[1])
+
+#     # Detect and match features (You may use your preferred method)
+#     # For example, using ORB feature detector and matcher
+#     detector = cv2.ORB_create()
+#     keypoints1, descriptors1 = detector.detectAndCompute(image1, None)
+#     keypoints2, descriptors2 = detector.detectAndCompute(image2, None)
+
+#     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+#     matches = matcher.match(descriptors1, descriptors2)
+
+#     # # Selecting good matches based on the fundamental matrix
+#     # good_matches = []
+#     # for match in matches:
+#     #     point1 = keypoints1[match.queryIdx].pt
+#     #     point2 = keypoints2[match.trainIdx].pt
+#     #     point1 = np.array([point1[0], point1[1], 1.0])
+#     #     point2 = np.array([point2[0], point2[1], 1.0])
+
+#     #     # Check the epipolar constraint
+#     #     error = abs(np.matmul(point2, np.matmul(F, point1)))
+#     #     if error < 0.1:  # Adjust this threshold based on your requirements
+#     #         good_matches.append(match)
+    
+#     # Extract coordinates of matches
+#     points1 = np.float32([keypoints1[match.queryIdx].pt for match in matches])
+#     points2 = np.float32([keypoints2[match.trainIdx].pt for match in matches])
+
+#     # Use RANSAC to estimate good matches based on fundamental matrix
+#     model, inliers = cv2.findFundamentalMat(points1, points2, cv2.FM_RANSAC, ransacReprojThreshold=3.0)
+
+#     # Convert OpenCV's inliers format to Python boolean array
+#     inliers = inliers.ravel().tolist()
+
+#     # Filter matches based on RANSAC inliers
+#     good_matches = [matches[i] for i in range(len(matches)) if inliers[i] == 1]
+
+#     print(f"{len(good_matches)} good matches out of {len(matches)}")
+    
+#     # Plot matches and images in original sizes
+#     fig, ax = plt.subplots(figsize=(20, 10))
+
+#     # Display the first image
+#     ax.imshow(image1, cmap='gray')
+#     ax.axis('off')
+
+#     # Calculate the offset for the second image
+#     height, width = image1.shape[:2]
+#     offset = np.array([width, 0])
+
+#     # Display the second image shifted to the right
+#     ax.imshow(image2, cmap='gray', extent=[offset[0], offset[0] + width, height, 0])
+#     ax.axis('off')
+
+#     # Plot matches with offsets for the second image
+#     for match in good_matches:
+#         idx1 = match.queryIdx
+#         idx2 = match.trainIdx
+#         point1 = keypoints1[idx1].pt
+#         point2 = keypoints2[idx2].pt + offset  # Apply offset for the second image
+
+#         # Draw lines connecting the matches
+#         ax.plot([point1[0], point2[0]], [point1[1], point2[1]], 'c-', lw=1)
+
+#     # Save the image
+#     plt.savefig('./images/archive/matches_visualization.png', bbox_inches='tight', pad_inches=0)
+#     plt.close()
+
 
 @app.route("/")
 def home():
@@ -130,14 +241,26 @@ def upload_image():
         # if request.form:
         #     image = request.form["image"]
         if request.files:
+            captureCount = int(request.form["captureCount"])
             image = request.files["image"]
             camPose = np.array(json.loads(request.form["camPose"])).reshape((3,1))
             unprojectMatrix = np.array(json.loads(request.form["unprojectMatrix"])).reshape((4,4))
+            camMatrixWorld = np.array(json.loads(request.form["camMatrixWorld"])).reshape((4,4))
+            camProjectionMatrix = np.array(json.loads(request.form["camProjectionMatrix"])).reshape((4,4))
+            K = np.array(json.loads(request.form["K"])).reshape((3,4))
             
+            camera = Camera(camPose, unprojectMatrix, camMatrixWorld, camProjectionMatrix, K)
+            # saveCameraDetails(captureCount, camera)
+            cameras.append(camera)
+
             print("valid image")
             image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
+            # image.save(f"./images/archive/capture_{captureCount}.jpg")
             img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             imgbatch = transform(img).to(device)
+
+            # if captureCount > 0:
+            #     matchPoints()
 
             with torch.no_grad():
                 prediction = midas(imgbatch)
