@@ -63,7 +63,7 @@ async function createImageFromTexture(gl, texture, width, height) {
 	return imageBlob;
 }
 
-async function getDepthFromImage(imageBlob, camera) {
+async function getPointCloudFromImage(imageBlob, camera) {
 	imageBlob = await imageBlob;
 	const file = new File([imageBlob], 'capture.jpg', {type: imageBlob.type});
 	const camPose = camera.getWorldPosition(new THREE.Vector3())
@@ -75,16 +75,19 @@ async function getDepthFromImage(imageBlob, camera) {
 	formData.append("unprojectMatrix", JSON.stringify(unproject.clone().transpose().toArray()));
 	
 	const hostname = window.location.hostname;
-	const depth = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
+	const points = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
 	.then(response => response.arrayBuffer())
 	.then(buffer => {
 		const decodedData = msgpack.decode(new Uint8Array(buffer));
 		return decodedData;
 	}).catch(err => {
 		alert(err);
+		const depthButton = document.getElementById('depth-button');
+		depthButton.innerHTML = "Add Depth";
+		depthButton.disabled = false;
 	});
 
-	return await depth;
+	return await points;
 	return Array(20).fill().map(() => Array(20).fill(1));
 }
 
@@ -102,7 +105,9 @@ function toNDC(p_camera, vp) {
 	return new THREE.Vector3(ndc_x, ndc_y, ndc_z);
 }
 
-function addSmallCubesAt(points, scene, transparent = true) {
+async function addSmallCubesAt(points, scene) {
+	points = await points;
+	// console.log(points);
 	var dotGeometry = new THREE.BufferGeometry().setFromPoints(points);
 	
 	// const grayscale = Math.min(1, vector.length() / 5);
@@ -155,13 +160,9 @@ async function addPointCloud(depth, scene, camera, viewport) {
 	}
 
 	addSmallCubesAt(points, scene);
-
-	const depthButton = document.getElementById('depth-button');
-	depthButton.innerHTML = "Add Depth";
-	depthButton.disabled = false;
 }
 
-function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
+async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
 	const depthButton = document.getElementById('depth-button');
 	depthButton.innerHTML = "Waiting...";
 	depthButton.disabled = true;
@@ -176,10 +177,16 @@ function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
 	const cameraTexture = binding.getCameraImage(view.camera);
 	const imageBlob = createImageFromTexture(gl, cameraTexture, view.camera.width, view.camera.height);
 	
-	const depth = getDepthFromImage(imageBlob, camera);
+	const points = await getPointCloudFromImage(imageBlob, camera);
 
 	scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
-	addPointCloud(depth, scene, camera, viewport);
+	// addPointCloud(depth, scene, camera, viewport);
+	const vectorPoints = [];
+	points.forEach((P) => vectorPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
+	addSmallCubesAt(vectorPoints, scene);
+
+	depthButton.innerHTML = "Add Depth";
+	depthButton.disabled = false;
 }
 
 let xrSession = null;
@@ -192,6 +199,10 @@ function onXrButtonClicked() {
 	else {
 		deativateXR();
 		document.getElementById('xr-button').innerText = 'Enter AR';
+		
+		const depthButton = document.getElementById('depth-button');
+		depthButton.innerHTML = "Add Depth";
+		depthButton.disabled = false;
 	}
 }
 
