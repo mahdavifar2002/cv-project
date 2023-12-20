@@ -7,3 +7,4 @@ opencv-python
 pygltflib
 scipy
 msgpack
+matplotlib
