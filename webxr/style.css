@@ -6,6 +6,8 @@
 	background: none;
 	height: 55px;
 	min-width: 150px;
+	width: 40vw;
+	margin: 2vh 6vw 2vh 0;
 	display: inline-block;
 	position: relative;
 	cursor: pointer;
@@ -16,10 +18,12 @@
 
 .overlay {
 	position: fixed;
-	margin: 50px 50px 50px 50px;
+	top: 5vh;
+	left: 5vw;
+	right: 5vw;
 }
 
 .below-buttons {
 	position: fixed;
-	top: 80%;
+	bottom: 5vh;
 }
