@@ -180,7 +180,7 @@ def matchPoints(ind_1, ind_2):
     points2 = np.float32([keypoints2[match.trainIdx].pt for match in matches])
 
     # Use RANSAC to estimate good matches based on fundamental matrix
-    model, inliers = cv2.findFundamentalMat(points1, points2, cv2.FM_RANSAC, ransacReprojThreshold=3.0)
+    model, inliers = cv2.findFundamentalMat(points1, points2, cv2.FM_RANSAC, ransacReprojThreshold=1.0)
 
     # Convert OpenCV's inliers format to Python boolean array
     inliers = inliers.ravel().tolist()
@@ -206,7 +206,8 @@ def matchPoints(ind_1, ind_2):
     ax.axis('off')
 
     # Array to store reconstructed points for good matches
-    merges = []
+    keypoints = []
+    keypoints_coords = []
 
     # Plot matches with offsets for the second image
     for match in good_matches:
@@ -216,7 +217,7 @@ def matchPoints(ind_1, ind_2):
         point2 = keypoints2[idx2].pt + offset  # Apply offset for the second image
 
         # Draw lines connecting the matches
-        ax.plot([point1[0], point2[0]], [point1[1], point2[1]], 'c-', lw=1)
+        ax.plot([point1[0], point2[0]], [point1[1], point2[1]], color=np.random.rand(3), lw=1)
 
 
         # Let's do some math here
@@ -233,7 +234,8 @@ def matchPoints(ind_1, ind_2):
 
         x0 = [1, 1, 1]
         result = optimize.minimize(lines_intersection_loss, x0, args=(c1,p1,c2,p2), method="Nelder-Mead")
-        merges.append(result.x.tolist())
+        keypoints.append(result.x.tolist())
+        keypoints_coords.append([math.floor(point2[1]), math.floor(point2[0])])
 
         # print(f"merge  -> {result.x}")
         # print(f"midas1 -> {cameras[ind_1].points[math.floor(point1[1])][math.floor(point1[0])]}")
@@ -244,7 +246,118 @@ def matchPoints(ind_1, ind_2):
     plt.savefig('./images/archive/matches_visualization.png', bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    return merges
+    return keypoints, keypoints_coords
+
+
+def keypoints_reporojection_loss(x, midas_points, keypoints):
+    M = x.reshape(4, 4)
+    error_sum = 0
+
+    for i in range(len(keypoints)):
+        error = np.linalg.norm(keypoints[i] - M @ midas_points[i])
+        error_sum += error ** 2
+    
+    return error_sum
+
+
+def refinePoints(points, keypoints, keypoints_coords):
+    midas_points = []
+    
+    # Grab midas points corresponding to keypoints and convert them to homogeneous coordinates
+    for i, keypoints_coord in enumerate(keypoints_coords):
+        row, column = keypoints_coord
+        keypoints[i].append(1)
+        midas_points.append(np.append(points[row][column].copy(), 1))
+    
+
+    # Initial guess: identity matrix
+    x0 = np.eye(4).reshape(-1)
+
+    # Define the constraint: sum of parameters = 1
+    constraint_matrix = [[1] * 16]
+    constraint_rhs = [1]
+    constraint = optimize.LinearConstraint(constraint_matrix, constraint_rhs, constraint_rhs)
+
+
+    result = optimize.minimize(keypoints_reporojection_loss, x0, args=(midas_points, keypoints), constraints=constraint)
+    M = result.x.reshape(4, 4)
+    
+    # Print the result along with additional information
+    print(f"Optimization Result:")
+    print(f"Optimal value: {result.fun}")
+    print(f"Optimal parameters:\n{M}")
+    print(f"Success state: {result.success}")
+    print(f"Number of iterations: {result.nit}")
+    print(f"Message: {result.message}")
+
+    print("transformation matrix M =\n", M)
+    height = points.shape[0]
+    width = points.shape[1]
+
+    # Add a homogeneous coordinate to prepare for applying transformation matrix M
+    points_homogeneous = np.zeros((height, width, 4))
+    points_homogeneous[:,:,:3] = points[:,:,:3]
+    points_homogeneous[:,:,3] = 1
+
+    # Apply transformation matrix M
+    points_homogeneous = points_homogeneous.reshape(-1, 4).T
+    points_homogeneous = M @ points_homogeneous
+    points_homogeneous /= points_homogeneous[3,:]
+
+    # Remove 4th homogeneous coordinate
+    points = points_homogeneous[:3,:]
+
+    # Reshape back to grid
+    points = points.T.reshape(height, width, 3)
+
+    return points
+
+    # for row in range(height):
+    #     for column in range(width):
+    #         point_homo = M @ np.append(points[row][column], 1)
+    #         point_homo /= point_homo[3]
+    #         points[row][column] = point_homo[:3]
+
+
+def keypoints_depth_loss(x, midas_depth, midas_points, keypoints, camPose):
+    error_sum = 0
+    m, t = x
+    refined_depth = m * np.array(midas_depth) + t
+
+    # Apply depth to point cloud
+    depth_repeated = np.repeat(refined_depth[:, np.newaxis], 3, axis=1)
+    refined_points = np.multiply(midas_points, depth_repeated)
+
+    # Convert from camera frame to world frame
+    refined_points += camPose.reshape(-1)
+
+    for i in range(len(keypoints)):
+        error = np.linalg.norm(keypoints[i] - refined_points[i])
+        error_sum += error ** 2
+    
+    return error_sum
+
+
+def refineDepth(depth, points, keypoints, keypoints_coords, camPose):
+    midas_depth = []
+    midas_points = []
+
+    # Grab midas depths corresponding to keypoints
+    for i, keypoints_coord in enumerate(keypoints_coords):
+        row, column = keypoints_coord
+        midas_depth.append(depth[row][column].copy())
+        midas_points.append(points[row][column].copy())
+    
+    # Initial guess
+    x0 = [5, 5]
+
+    print("starting optimization")
+    result = optimize.minimize(keypoints_depth_loss, x0, args=(midas_depth, midas_points, keypoints, camPose), method="Nelder-Mead", bounds=((0, None), (None, None)))
+    m, t = result.x
+    print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
+    depth = m*depth + t
+
+    return depth
 
 
 @app.route("/")
@@ -318,11 +431,17 @@ def upload_image():
             upper_bound = np.inf*np.ones(lower_bound.shape)
             constraint = optimize.LinearConstraint(A, lower_bound, upper_bound)
 
+            # Refine midas depth map based WebXR floor detection
             print("starting optimization")
             result = optimize.minimize(loss, x0, args=(A,b), method="Nelder-Mead", bounds=((0, None), (None, None)))
             m, t = result.x
             print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
             depth = m*depth + t
+
+            # Refine midas depth map based on 3d reconstructed keypoints
+            if captureCount > 0:
+                keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
+                depth = refineDepth(depth, points, keypoints, keypoints_coords, camPose)
 
             # Apply depth to point cloud
             depth_repeated = np.repeat(depth[:, :, np.newaxis], 3, axis=2)
@@ -330,6 +449,11 @@ def upload_image():
 
             # Convert from camera frame to world frame
             points += camPose.reshape(-1)
+            
+            # # Refine midas 3d points based on 3d reconstructed keypoints
+            # if captureCount > 0:
+            #     keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
+            #     points = refinePoints(points, keypoints, keypoints_coords)
 
             # Save full depth map and point cloud in camera object
             camera.depth = depth
@@ -357,9 +481,6 @@ def upload_image():
             
             # triangles = np.stack(triangles, axis=0)
             # mesh_to_glb(points, triangles)
-
-            if captureCount > 0:
-                return msgpack.packb(matchPoints(captureCount-1, captureCount))
 
             encoded_data = msgpack.packb(salmpled_points)
             return encoded_data
