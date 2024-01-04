@@ -135,14 +135,51 @@ def saveCameraDetails(id, camera):
         # file.write(f"depth =\n{camera.depth}\n\n")
         # file.write(camera.toJSON())
 
-
 def lines_intersection_loss(x, c1, p1, c2, p2):
+    direction1 = p1 - c1
+    direction2 = p2 - c2
+    direction1 /= np.linalg.norm(direction1)
+    direction2 /= np.linalg.norm(direction2)
+    
+    distance1 = np.cross(x-c1, direction1)
+    distance2 = np.cross(x-c2, direction2)
+
+    return np.linalg.norm(distance1) + np.linalg.norm(distance2)
+    
     err1 = (x[0] - c1[0]) * (c1[1] - p1[1]) - (x[1] - c1[1]) * (c1[0] - p1[0])
     err2 = (x[1] - c1[1]) * (c1[2] - p1[2]) - (x[2] - c1[2]) * (c1[1] - p1[1])
     err3 = (x[0] - c2[0]) * (c2[1] - p2[1]) - (x[1] - c2[1]) * (c2[0] - p2[0])
     err4 = (x[1] - c2[1]) * (c2[2] - p2[2]) - (x[2] - c2[2]) * (c2[1] - p2[1])
 
     return abs(err1) + abs(err2) + abs(err3) + abs(err4)
+
+def line_parametric(p1, p2):
+    def line(t):
+        return p1 + t * (p2 - p1)
+    return line
+
+def distance_squared(t, line1, line2):
+    x1 = line1(t[0])
+    x2 = line2(t[1])
+    return np.sum((x1 - x2)**2)
+
+def closest_point_skew_lines(p1, p2, p3, p4):
+    line1 = line_parametric(p1, p2)
+    line2 = line_parametric(p3, p4)
+
+    # Initial guess for t and t' parameters
+    initial_guess = [0.0, 0.0]
+
+    # Minimize the distance function
+    result = optimize.minimize(distance_squared, initial_guess, args=(line1, line2), method='Powell')
+
+    t_min, t_prime_min = result.x
+    closest_point_line1 = line1(t_min)
+    closest_point_line2 = line2(t_prime_min)
+
+    midpoint = 0.5 * (closest_point_line1 + closest_point_line2)
+    
+    return midpoint
 
 
 def matchPoints(ind_1, ind_2):
@@ -224,7 +261,7 @@ def matchPoints(ind_1, ind_2):
         point2 -= offset
         rec1 = reconstructPixel(cameras[ind_1].camPose, cameras[ind_1].unprojectMatrix, height, width, point1[1], point1[0]) + cameras[ind_1].camPose
         rec2 = reconstructPixel(cameras[ind_2].camPose, cameras[ind_2].unprojectMatrix, height, width, point2[1], point2[0]) + cameras[ind_2].camPose
-
+        
         # line1 : camPose1 ___ rec1
         # line2 : camPose2 ___ rec2
         c1 = cameras[ind_1].camPose.copy().reshape(3)
@@ -232,9 +269,11 @@ def matchPoints(ind_1, ind_2):
         c2 = cameras[ind_2].camPose.copy().reshape(3)
         p2 = rec2.reshape(3)
 
-        x0 = [1, 1, 1]
-        result = optimize.minimize(lines_intersection_loss, x0, args=(c1,p1,c2,p2), method="Nelder-Mead")
-        keypoints.append(result.x.tolist())
+        # x0 = [1, 1, 1]
+        # result = optimize.minimize(lines_intersection_loss, x0, args=(c1,p1,c2,p2), method="Nelder-Mead")
+        # keypoints.append(result.x.tolist())
+        midpoint = closest_point_skew_lines(c1, p1, c2, p2)
+        keypoints.append(midpoint.tolist())
         keypoints_coords.append([math.floor(point2[1]), math.floor(point2[0])])
 
         # print(f"merge  -> {result.x}")
@@ -282,15 +321,6 @@ def refinePoints(points, keypoints, keypoints_coords):
     result = optimize.minimize(keypoints_reporojection_loss, x0, args=(midas_points, keypoints), constraints=constraint)
     M = result.x.reshape(4, 4)
     
-    # Print the result along with additional information
-    print(f"Optimization Result:")
-    print(f"Optimal value: {result.fun}")
-    print(f"Optimal parameters:\n{M}")
-    print(f"Success state: {result.success}")
-    print(f"Number of iterations: {result.nit}")
-    print(f"Message: {result.message}")
-
-    print("transformation matrix M =\n", M)
     height = points.shape[0]
     width = points.shape[1]
 
@@ -319,6 +349,20 @@ def refinePoints(points, keypoints, keypoints_coords):
     #         points[row][column] = point_homo[:3]
 
 
+def reportOptimizationResult(result):
+    print()
+    print("  Optimization Result:")
+    print(f"        Optimal value: {result.fun}")
+    print(f"   Optimal parameters: {result.x}")
+    print(f"        Success state: {result.success}")
+    try:
+        print(f" Number of iterations: {result.nit}")
+    except AttributeError:
+        print(f"Number of evaluations: {result.nfev}")
+    print(f"              Message: {result.message}")
+    print()
+
+
 def keypoints_depth_loss(x, midas_depth, midas_points, keypoints, camPose):
     error_sum = 0
     m, t = x
@@ -332,29 +376,52 @@ def keypoints_depth_loss(x, midas_depth, midas_points, keypoints, camPose):
     refined_points += camPose.reshape(-1)
 
     for i in range(len(keypoints)):
-        error = np.linalg.norm(keypoints[i] - refined_points[i])
-        error_sum += error ** 2
+        err = np.linalg.norm(keypoints[i] - refined_points[i])
+        if err > 1:
+            err = 1
+        error_sum += err ** 2
     
+    # print(f"{error_sum / len(keypoints)} | {x}")
     return error_sum
 
+
+def keypoints_depth_errors(x, midas_depth, midas_points, keypoints, camPose):
+    errors = []
+    m, t = x
+    refined_depth = m * np.array(midas_depth) + t
+
+    # Apply depth to point cloud
+    depth_repeated = np.repeat(refined_depth[:, np.newaxis], 3, axis=1)
+    refined_points = np.multiply(midas_points, depth_repeated)
+
+    # Convert from camera frame to world frame
+    refined_points += camPose.reshape(-1)
+
+    for i in range(len(keypoints)):
+        err = np.linalg.norm(keypoints[i] - refined_points[i])
+        errors.append(err)
+    
+    return np.array(errors)
 
 def refineDepth(depth, points, keypoints, keypoints_coords, camPose):
     midas_depth = []
     midas_points = []
 
     # Grab midas depths corresponding to keypoints
-    for i, keypoints_coord in enumerate(keypoints_coords):
+    for keypoints_coord in keypoints_coords:
         row, column = keypoints_coord
         midas_depth.append(depth[row][column].copy())
         midas_points.append(points[row][column].copy())
     
     # Initial guess
-    x0 = [5, 5]
+    x0 = [1, 0]
 
     print("starting optimization")
     result = optimize.minimize(keypoints_depth_loss, x0, args=(midas_depth, midas_points, keypoints, camPose), method="Nelder-Mead", bounds=((0, None), (None, None)))
+    # result = optimize.least_squares(keypoints_depth_errors, x0, args=(midas_depth, midas_points, keypoints, camPose), bounds=([0, -np.inf], [np.inf, np.inf]))
     m, t = result.x
-    print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
+    reportOptimizationResult(result)
+    # print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
     depth = m*depth + t
 
     return depth
@@ -382,7 +449,7 @@ def upload_image():
             camera = Camera(camPose, unprojectMatrix, camMatrixWorld, camProjectionMatrix, K)
             cameras[captureCount] = camera
 
-            print("valid image")
+            print("_" * 60)
             # image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             image.save(f"./images/archive/capture_{captureCount}.jpg")
             img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
@@ -403,7 +470,8 @@ def upload_image():
 
                 I8 = (depth * 255.9).astype(np.uint8)
                 img = Image.fromarray(I8)
-                img.save("./images/depth.jpg")
+                # img.save("./images/depth.jpg")
+                img.save(f"./images/archive/depth_{captureCount}.jpg")
 
             # return render_template("upload_image.html", upload_image=image.filename)
 
@@ -435,10 +503,12 @@ def upload_image():
             print("starting optimization")
             result = optimize.minimize(loss, x0, args=(A,b), method="Nelder-Mead", bounds=((0, None), (None, None)))
             m, t = result.x
-            print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
+            # print(f"m={m}, t={t} success={result.success} message={result.message} nit={result.nit}")
+            reportOptimizationResult(result)
             depth = m*depth + t
 
             # Refine midas depth map based on 3d reconstructed keypoints
+            keypoints = []
             if captureCount > 0:
                 keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
                 depth = refineDepth(depth, points, keypoints, keypoints_coords, camPose)
@@ -481,8 +551,8 @@ def upload_image():
             
             # triangles = np.stack(triangles, axis=0)
             # mesh_to_glb(points, triangles)
-
-            encoded_data = msgpack.packb(salmpled_points)
+            
+            encoded_data = msgpack.packb([salmpled_points, keypoints])
             return encoded_data
     return render_template("upload_image.html")
     

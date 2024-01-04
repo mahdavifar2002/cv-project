@@ -131,7 +131,7 @@ function toNDC(p_camera, vp) {
 	return new THREE.Vector3(ndc_x, ndc_y, ndc_z);
 }
 
-async function addSmallCubesAt(points, scene) {
+async function addSmallCubesAt(points, scene, color=0x00FF00, opacity=0.2) {
 	points = await points;
 	// console.log(points);
 	var dotGeometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -148,9 +148,9 @@ async function addSmallCubesAt(points, scene) {
 	voidDot.name = "point";
 	scene.add( voidDot );
 
-	var colorMaterial = new THREE.PointsMaterial( { size: 0.05, color: 0x00FF00 } );
+	var colorMaterial = new THREE.PointsMaterial( { size: 0.05, color: color } );
 	colorMaterial.transparent = true;
-	colorMaterial.opacity = 0.2;
+	colorMaterial.opacity = opacity;
 
 	var colorDot = new THREE.Points( dotGeometry, colorMaterial );
 	// colorDot.position.copy(scene.worldToLocal(vector));
@@ -208,8 +208,13 @@ async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, fr
 	scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
 	// addPointCloud(depth, scene, camera, viewport);
 	const vectorPoints = [];
-	points.forEach((P) => vectorPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
+	points[0].forEach((P) => vectorPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
 	addSmallCubesAt(vectorPoints, scene);
+
+	const vectorKeyPoints = []
+	points[1].forEach((P) => vectorKeyPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
+	addSmallCubesAt(vectorKeyPoints, scene, 0x0000FF, 0.5);
+
 
 	depthButton.innerHTML = "Add Depth";
 	depthButton.disabled = false;
