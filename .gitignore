@@ -175,3 +175,7 @@ webxr/keys
 node_modules/
 package.json
 package-lock.json
+
+# Ignore test files 
+flask/test/
+webxr/index2.html
