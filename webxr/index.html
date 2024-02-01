@@ -9,21 +9,30 @@
   <link rel='stylesheet' href='style.css'>
   <title>Hello WebXR!</title>
 
+  <!-- <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@v0.159.0/build/three.js",
+        "three/addons/": "https://unpkg.com/three@v0.159.0/examples/jsm/"
+      }
+    }
+  </script> -->
+
   <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@v0.159.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@v0.159.0/examples/jsm/"
+        "three": "./three.js/build/three.module.min.js",
+        "three/addons/": "./three.js/examples/jsm/"
       }
     }
   </script>
 
   <!-- mobile console -->
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+  <script>eruda.init();</script>
 
   <!-- msgpack -->
   <script src="https://cdn.jsdelivr.net/npm/msgpack-lite/dist/msgpack.min.js"></script>
-  <script>eruda.init();</script>
 </head>
 <body>
 
@@ -37,7 +46,9 @@
     </div>
     <div class="below-buttons">
       <button id="add-button" class="xr-button">Add Model</button>
+      <button id="clear-button" class="xr-button">Clear Scene</button>
       <button id="depth-button" class="xr-button">Add Depth</button>
+      <input id="slider" type="range" min="-50" max="50" value="0" style="width: 40vw; min-width: 150px;">
     </div>
   </div>
 </div>

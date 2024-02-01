@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 
 function onSecondFirstFrame(time, delta) {
 	if (Math.floor(time/1000) != Math.floor((time - delta)/1000)) {
@@ -84,7 +85,7 @@ function getCameraIntrinsics(projectionMatrix, viewport) {
 	return K;
 }
 
-async function getPointCloudFromImage(imageBlob, camera, viewport) {
+async function getPointCloudFromImage(imageBlob, camera, viewport, floor_y) {
 	imageBlob = await imageBlob;
 	const file = new File([imageBlob], 'capture.jpg', {type: imageBlob.type});
 	const camPose = camera.getWorldPosition(new THREE.Vector3())
@@ -99,6 +100,7 @@ async function getPointCloudFromImage(imageBlob, camera, viewport) {
 	formData.append("camMatrixWorld", JSON.stringify(camera.matrixWorld.clone().transpose().toArray()));
 	formData.append("camProjectionMatrix", JSON.stringify(camera.projectionMatrix.clone().transpose().toArray()));
 	formData.append("K", JSON.stringify(K));
+	formData.append("floor_y", JSON.stringify(floor_y));
 	
 	const hostname = window.location.hostname;
 	const points = await fetch("https://" + hostname + ":5000/upload_image", {method:"POST", body:formData})
@@ -133,7 +135,15 @@ function toNDC(p_camera, vp) {
 
 async function addSmallCubesAt(points, scene, color=0x00FF00, opacity=0.2) {
 	points = await points;
-	// console.log(points);
+
+	// var pointsArray = [];
+    // for (let i = 0; i < points.length; i++) {
+    //     for (let j = 0; j < points[i].length; j++) {
+	// 		console.log(points[i][j])
+    //         pointsArray.push(points[i][j]);
+    //     }
+    // }
+
 	var dotGeometry = new THREE.BufferGeometry().setFromPoints(points);
 	
 	// const grayscale = Math.min(1, vector.length() / 5);
@@ -156,6 +166,74 @@ async function addSmallCubesAt(points, scene, color=0x00FF00, opacity=0.2) {
 	// colorDot.position.copy(scene.worldToLocal(vector));
 	colorDot.name = "point";
 	scene.add( colorDot );
+}
+
+function smallTriangle(v0, v1, v2) {
+	var eps = 0.1;
+	return v0.distanceTo(v1) < eps && v0.distanceTo(v2) < eps && v1.distanceTo(v2) < eps;
+}
+
+async function AddMeshFromGrid(grid, scene, color=0x00FF00, opacity=0.2) {
+	grid = await grid;
+
+	// Create array of vertices for the geometry
+	const vertices = [];
+
+	for (var i = 0; i < grid.length; i++) {
+		for (var j = 0; j < grid[i].length; j++) {
+			vertices.push(grid[i][j].x);
+			vertices.push(grid[i][j].y);
+			vertices.push(grid[i][j].z);
+		}
+	}
+
+	// Create array of indices for the geometry
+	const indices = [];
+
+	for (var i = 0; i < grid.length - 1; i++) {
+		var width = grid[i].length;
+		for (var j = 0; j < grid[i].length - 1; j++) {
+			var v0 = i * width + j;
+			var v1 = i * width + (j+1);
+			var v2 = (i+1) * width + (j+1);
+			var v3 = (i+1) * width + j;
+
+			indices.push(v0, v1, v2);
+			indices.push(v0, v2, v1);
+			indices.push(v2, v3, v0);
+			indices.push(v2, v0, v3);
+			
+			if (smallTriangle(grid[i][j], grid[i][j+1], grid[i+1][j+1])) {
+			}
+
+			if (smallTriangle(grid[i+1][j+1], grid[i+1][j], grid[i][j])) {
+			}
+		}
+	}
+
+	console.log(indices);
+
+	// Create geometry
+	const geometry = new THREE.BufferGeometry();
+	geometry.setIndex( indices );
+	geometry.setAttribute( 'position', new THREE.BufferAttribute( new Float32Array(vertices), 3 ) );
+
+	// Create void and color meshes and add them to the scene
+	var voidMaterial = new THREE.MeshBasicMaterial( { color: 0x000000 } );
+	voidMaterial.opacity = 0;
+	voidMaterial.blending = THREE.MultiplyBlending;
+
+	var voidMesh = new THREE.Mesh( geometry, voidMaterial );
+	voidMesh.name = "point";
+	scene.add( voidMesh );
+
+	var colorMaterial = new THREE.MeshBasicMaterial( { color: color } );
+	colorMaterial.transparent = true;
+	colorMaterial.opacity = opacity;
+
+	var colorMesh = new THREE.Mesh( geometry, colorMaterial );
+	colorMesh.name = "point";
+	scene.add( colorMesh );
 }
 
 function reconstructFromScreen(pixel, camera, viewport, depth) {
@@ -188,7 +266,7 @@ async function addPointCloud(depth, scene, camera, viewport) {
 	addSmallCubesAt(points, scene);
 }
 
-async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame) {
+async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame, floor_y) {
 	const depthButton = document.getElementById('depth-button');
 	depthButton.innerHTML = "Waiting...";
 	depthButton.disabled = true;
@@ -203,17 +281,26 @@ async function addDepthPointCloud(gl, session, referenceSpace, scene, camera, fr
 	const cameraTexture = binding.getCameraImage(view.camera);
 	const imageBlob = createImageFromTexture(gl, cameraTexture, view.camera.width, view.camera.height);
 	
-	const points = await getPointCloudFromImage(imageBlob, camera, viewport);
+	const points = await getPointCloudFromImage(imageBlob, camera, viewport, floor_y);
 
 	scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
 	// addPointCloud(depth, scene, camera, viewport);
 	const vectorPoints = [];
 	points[0].forEach((P) => vectorPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
-	addSmallCubesAt(vectorPoints, scene);
+	// addSmallCubesAt(vectorPoints, scene);
 
-	const vectorKeyPoints = []
-	points[1].forEach((P) => vectorKeyPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
-	addSmallCubesAt(vectorKeyPoints, scene, 0x0000FF, 0.5);
+	const grid = [];
+	points[1].forEach((row) => {
+		const gridRow = [];
+		row.forEach((P) => gridRow.push(new THREE.Vector3(P[0], P[1], P[2])));
+		grid.push(gridRow);
+	});
+
+	AddMeshFromGrid(grid, scene);
+
+	// const vectorKeyPoints = []
+	// points[2].forEach((P) => vectorKeyPoints.push(new THREE.Vector3(P[0], P[1], P[2])));
+	// addSmallCubesAt(vectorKeyPoints, scene, 0x0000FF, 0.5);
 
 
 	depthButton.innerHTML = "Add Depth";
@@ -247,7 +334,7 @@ async function activateXR() {
 	// Create a scene.
 	const scene = new THREE.Scene();
 
-	const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+	const directionalLight = new THREE.DirectionalLight(0xffffff, 1.7);
 	directionalLight.position.set(10, 15, 10);
 	scene.add(directionalLight);
 
@@ -296,8 +383,11 @@ async function activateXR() {
 	})
 
 	let model;
-	loader.load("./models/astronaut/astronaut.glb", function(gltf) {
+	// loader.load("./models/astronaut/astronaut.glb", function(gltf) {
+	loader.load("./models/carpet/carpet.glb", function(gltf) {
+	// loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/sunflower/sunflower.gltf", function(gltf) {
 		model = gltf.scene;
+		model.name = "model";
 	});
 
 	var depthFlag = false;
@@ -320,9 +410,22 @@ async function activateXR() {
 		if (model) {
 			const clone = model.clone();
 			clone.position.copy(reticle.position);
+			// clone.position.setY(0);
 			scene.add(clone);
 		}
 	});
+	
+	const clearButton = document.getElementById('clear-button');
+	clearButton.addEventListener("click", function() {
+		scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
+		scene.getObjectsByProperty("name", "model").forEach((x) => scene.remove(x));
+	});
+
+	const slider = document.getElementById('slider');
+	slider.addEventListener("input", function() {
+		scene.getObjectsByProperty("name", "model").forEach((x) => x.position.setY(slider.value / 100));
+	});
+
 	
 
 	// Track the previous frame time.
@@ -361,17 +464,24 @@ async function activateXR() {
 				const hitPose = hitTestResults[0].getPose(referenceSpace);
 				reticle.visible = true;
 				reticle.position.set(hitPose.transform.position.x, hitPose.transform.position.y, hitPose.transform.position.z);
+				
+				// const camPose = camera.getWorldPosition(new THREE.Vector3());
+				// const pWorld = reticle.position.clone();
+				// const pCamera = reticle.position.clone().sub(camPose);
+				// const newPose = pCamera.clone().multiplyScalar(1 - pWorld.y / pCamera.y).add(camPose);
+				
+				// reticle.position.set(newPose.x, newPose.y, newPose.z);
+
 				reticle.updateMatrixWorld(true);
+
+				// if (second % 20 == 5) {
+				if (depthFlag == true) {
+					depthFlag = false;
+					addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame, hitPose.transform.position.y);
+				}
 			}
 
 			const second = onSecondFirstFrame(time, delta);
-
-			// if (second % 20 == 5) {
-			if (depthFlag == true) {
-				depthFlag = false;
-				addDepthPointCloud(gl, session, referenceSpace, scene, camera, frame);
-			}
-
 
 			// Render the scene with THREE.WebGLRenderer.
 			renderer.render(scene, camera);

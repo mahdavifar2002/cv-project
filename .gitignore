@@ -171,6 +171,10 @@ flask/keys
 # Frontend
 webxr/.vscode
 webxr/keys
+webxr/models/archive
+
+# custom three.js
+webxr/three.js
 
 node_modules/
 package.json

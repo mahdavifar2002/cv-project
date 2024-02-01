@@ -1,8 +1,10 @@
 import os
+import time
 
 from flask import Flask, redirect, jsonify, request, url_for, render_template, flash, send_from_directory
 from flask_cors import CORS, cross_origin
 import torch
+from torchvision.transforms import Compose
 import cv2
 import json
 import msgpack
@@ -16,36 +18,127 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+# MIDAS
+import midas.utils
+from midas.models.midas_net import MidasNet
+from midas.models.transforms import Resize, NormalizeImage, PrepareForNet
+
 from camera import Camera
 
+
+# Global variables
 app = Flask(__name__)
 cors = CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
 app.config["IMAGE_UPLOADS"] = "./images"
 app.config["MODEL_UPLOADS"] = "./models"
 cameras = {}
+midasmodel = None
+device = None
+zoemodel = None
 
 
-# Download the MiDaS
-# model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
-# model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
-model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
+# # Download the MiDaS
+# # model_type = "DPT_Large"     # MiDaS v3 - Large     (highest accuracy, slowest inference speed)
+# # model_type = "DPT_Hybrid"   # MiDaS v3 - Hybrid    (medium accuracy, medium inference speed)
+# model_type = "MiDaS_small"  # MiDaS v2.1 - Small   (lowest accuracy, highest inference speed)
 
-midas = torch.hub.load("intel-isl/MiDaS", model_type)
+# midas = torch.hub.load("intel-isl/MiDaS", model_type)
 
-# Move model to GPU if available
-device = torch.device('cuda') if torch.cuda.is_available() and model_type == "MiDaS_small" else torch.device('cpu')
-# device = torch.device('cpu')
-midas.to(device)
-midas.eval()
+# # Move model to GPU if available
+# device = torch.device('cuda') if torch.cuda.is_available() and model_type == "MiDaS_small" else torch.device('cpu')
+# # device = torch.device('cpu')
+# midas.to(device)
+# midas.eval()
 
-# Input transformation pipeline
-transforms = torch.hub.load('intel-isl/MiDaS', 'transforms')
+# # Input transformation pipeline
+# transforms = torch.hub.load('intel-isl/MiDaS', 'transforms')
 
-if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
-    transform = transforms.dpt_transform
-else:
-    transform = transforms.small_transform
+# if model_type == "DPT_Large" or model_type == "DPT_Hybrid":
+#     transform = transforms.dpt_transform
+# else:
+#     transform = transforms.small_transform
+
+def init_midas():
+    global midasmodel, device
+
+    # select device
+    # device = torch.device("cuda")
+    device = torch.device("cpu")
+
+    midas_model_path = "midas/model.pt"
+    # midas_model_path = "midas/midas_v21_small_256.pt"
+    midasmodel = MidasNet(midas_model_path, non_negative=True)
+    midasmodel.to(device)
+    midasmodel.eval()
+    return
+
+
+def init_zoe():
+    global zoemodel
+
+    print("started init_zoe()")
+    zoemodel = torch.hub.load("isl-org/ZoeDepth", "ZoeD_N", pretrained=True)
+    device = torch.device("cpu")
+    zoemodel = zoemodel.to(device)
+    print("finished init_zoe()")
+
+
+def estimate_midas(img, msize=512):
+    # MiDas -v2 forward pass script adapted from https://github.com/intel-isl/MiDaS/tree/v2
+
+    transform = Compose(
+        [
+            Resize(
+                msize,
+                msize,
+                resize_target=None,
+                keep_aspect_ratio=True,
+                ensure_multiple_of=32,
+                resize_method="upper_bound",
+                image_interpolation_method=cv2.INTER_CUBIC,
+            ),
+            NormalizeImage(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            PrepareForNet(),
+        ]
+    )
+
+    img_input = transform({"image": img})["image"]
+
+    # Forward pass
+    with torch.no_grad():
+        sample = torch.from_numpy(img_input).to(device).unsqueeze(0)
+        prediction = midasmodel.forward(sample)
+
+    prediction = prediction.squeeze().cpu().numpy()
+    prediction = cv2.resize(prediction, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_CUBIC)
+
+    # # Normalization
+    # depth_min = prediction.min()
+    # depth_max = prediction.max()
+
+    # if depth_max - depth_min > np.finfo("float").eps:
+    #     prediction = (prediction - depth_min) / (depth_max - depth_min)
+    # else:
+    #     prediction = 0
+
+    return prediction
+
+
+def estimate_zoe(img_path):
+    image = Image.open("capture.jpg").convert("RGB")  # load
+    depth_numpy = zoemodel.infer_pil(image)  # as numpy
+    depth_pil = zoemodel.infer_pil(image, output_type="pil")  # as 16-bit PIL Image
+    depth_tensor = zoemodel.infer_pil(image, output_type="tensor")  # as torch tensor
+    return depth_tensor.numpy()
+
+
+def read_image(path):
+    img = cv2.imread(path)
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0
+    return img
 
 
 def applyMatrix4(mat, vec):
@@ -427,6 +520,95 @@ def refineDepth(depth, points, keypoints, keypoints_coords, camPose):
     return depth
 
 
+def fill_if_interest_dominant(mask, edges, interest_mask, interest_mask_relaxed, threshold_ratio=0.5):
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    flood_fill_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+    the_ultimate_mask = cv2.bitwise_and(interest_mask_relaxed, 255 - edges)
+    flood_fill_mask[1:-1, 1:-1] = 255 - the_ultimate_mask
+    
+    for contour in contours:
+        contour_mask = np.zeros_like(mask)
+        cv2.drawContours(contour_mask, [contour], -1, 255, -1)
+        
+        interest_area = cv2.bitwise_and(interest_mask, contour_mask)
+        total_interest = np.sum(interest_area > 0)
+        total_area = np.sum(contour_mask > 0)
+        interest_ratio = total_interest / total_area if total_area > 0 else 0
+
+        if interest_ratio >= threshold_ratio:
+            moments = cv2.moments(contour)
+            if moments['m00'] == 0:
+                continue
+            seed_x = int(moments['m10'] / moments['m00'])
+            seed_y = int(moments['m01'] / moments['m00'])
+            seed_point = (seed_x, seed_y)
+            
+            if 0 <= seed_x < mask.shape[1] and 0 <= seed_y < mask.shape[0]:
+                cv2.floodFill(mask, flood_fill_mask, seed_point, 255)
+    
+    return mask
+
+def connected_canny(image, sigma=0.13):
+    # Compute the median of the single channel pixel intensities
+    v = np.median(image)
+
+    # Apply automatic Canny edge detection using the computed median
+    lower = int(max(0, (1.0 - sigma) * v))
+    upper = int(min(255, (1.0 + sigma) * v))
+    edged = cv2.Canny(image, lower, upper)
+
+    # Dilate the edges to close the gaps
+    kernel = np.ones((3,3), dtype=np.uint8)
+    dilated = cv2.dilate(edged, kernel, iterations=1)
+
+    return dilated
+
+def detect_floor(rgb_image, gray_image, y, floor_y):
+    # Threshold the grayscale image to create a binary mask of points of interest
+    _, interest_mask = cv2.threshold(y, floor_y + 0.03, 255, cv2.THRESH_BINARY_INV)
+    interest_mask = interest_mask.astype(np.uint8)
+
+    # Threshold the grayscale image to create a binary mask of points of interest
+    _, interest_mask_relaxed = cv2.threshold(y, floor_y + 0.06, 255, cv2.THRESH_BINARY_INV)
+    interest_mask_relaxed = interest_mask_relaxed.astype(np.uint8)
+
+    # Convert the RGB image to grayscale for Canny edge detection
+    gray_rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2GRAY)
+    edges = connected_canny(gray_rgb_image)
+
+    # Create an empty segmentation mask
+    segmentation_mask_density = np.zeros_like(gray_image)
+
+    # Fill the segmentation mask with white in areas where the points of interest are dominant
+    segmentation_mask_density = fill_if_interest_dominant(
+        segmentation_mask_density, edges, interest_mask, interest_mask_relaxed, threshold_ratio=0.5
+    )
+
+    # Vote between three masks
+    vote = segmentation_mask_density.astype(int) + interest_mask.astype(int) + interest_mask_relaxed.astype(int)
+    vote = (vote >= (2*255)).astype(int) * 255
+
+    # Save the new segmentation mask to a file
+    cv2.imwrite('./images/archive/0_edges.png', edges)
+    cv2.imwrite('./images/archive/1_mask.png', interest_mask)
+    cv2.imwrite('./images/archive/2_mask_relaxed.png', interest_mask_relaxed)
+    cv2.imwrite('./images/archive/3_mask_segmentation.png', segmentation_mask_density)
+    cv2.imwrite('./images/archive/4_mask_vote.png', vote)
+    cv2.imwrite('./images/archive/5_rgb.png', rgb_image)
+
+    # If you want to view the masks
+    # cv2.imshow('Original Image', rgb_image)
+    # cv2.imshow('Grayscale Image', gray_image)
+    # cv2.imshow('Interest Points Mask', interest_mask)
+    # cv2.imshow('Canny Edges', edges)
+    # cv2.imshow('Segmentation Mask with Density Check', segmentation_mask_density)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+
+    # return segmentation_mask_density
+    return vote
+
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -445,6 +627,8 @@ def upload_image():
             camMatrixWorld = np.array(json.loads(request.form["camMatrixWorld"])).reshape((4,4))
             camProjectionMatrix = np.array(json.loads(request.form["camProjectionMatrix"])).reshape((4,4))
             K = np.array(json.loads(request.form["K"])).reshape((3,4))
+            floor_y = np.array(json.loads(request.form["floor_y"])).reshape(-1)[0]
+            print(f"floor_y = {floor_y}")
             
             camera = Camera(camPose, unprojectMatrix, camMatrixWorld, camProjectionMatrix, K)
             cameras[captureCount] = camera
@@ -452,26 +636,40 @@ def upload_image():
             print("_" * 60)
             # image.save(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
             image.save(f"./images/archive/capture_{captureCount}.jpg")
-            img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
-            imgbatch = transform(img).to(device)
 
-            with torch.no_grad():
-                prediction = midas(imgbatch)
-                prediction = torch.nn.functional.interpolate(
-                    prediction.unsqueeze(1),
-                    size = img.shape[:2], 
-                    mode='bicubic', 
-                    align_corners=False
-                ).squeeze()
+            ## old midas
+            # img = cv2.imread(os.path.join(app.config["IMAGE_UPLOADS"], image.filename))
+            # imgbatch = transform(img).to(device)
 
-                depth = prediction.cpu().numpy()
-                depth = 1/depth
-                depth = (depth - depth.min()) / (depth.max() - depth.min())
+            # with torch.no_grad():
+            #     prediction = midas(imgbatch)
+            #     prediction = torch.nn.functional.interpolate(
+            #         prediction.unsqueeze(1),
+            #         size = img.shape[:2], 
+            #         mode='bicubic', 
+            #         align_corners=False
+            #     ).squeeze()
 
-                I8 = (depth * 255.9).astype(np.uint8)
-                img = Image.fromarray(I8)
-                # img.save("./images/depth.jpg")
-                img.save(f"./images/archive/depth_{captureCount}.jpg")
+            #     depth = prediction.cpu().numpy()
+
+            img = read_image(f"./images/archive/capture_{captureCount}.jpg")
+            depth = estimate_midas(img, 384)
+            
+            # start = time.time()
+            # depth = estimate_zoe(f"./images/archive/capture_{captureCount}.jpg")
+            # end = time.time()
+            # print(end - start)
+
+            plt.imsave(f"./images/archive/disparity_{captureCount}.jpg", depth)
+
+            depth = 1/depth
+            depth = (depth - depth.min()) / (depth.max() - depth.min())
+
+            # Save the depth map in gray scale
+            I8 = (depth * 255.9).astype(np.uint8)
+            img = Image.fromarray(I8)
+            # img.save("./images/depth.jpg")
+            img.save(f"./images/archive/depth_{captureCount}.jpg")
 
             # return render_template("upload_image.html", upload_image=image.filename)
 
@@ -489,7 +687,7 @@ def upload_image():
                     if row%step == 0 and column%step == 0:
                         rec = points[row][column].reshape(3,1)                    
                         A.append([rec[1][0] * depth[row][column], rec[1][0]])
-                        b.append([-camPose[1][0]])
+                        b.append([-camPose[1][0] + floor_y])
 
             # equal initial weighting
             x0 = [5, 5]
@@ -509,17 +707,50 @@ def upload_image():
 
             # Refine midas depth map based on 3d reconstructed keypoints
             keypoints = []
-            if captureCount > 0:
-                keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
-                depth = refineDepth(depth, points, keypoints, keypoints_coords, camPose)
+            # if captureCount > 0:
+            #     keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
+            #     depth = refineDepth(depth, points, keypoints, keypoints_coords, camPose)
 
             # Apply depth to point cloud
             depth_repeated = np.repeat(depth[:, :, np.newaxis], 3, axis=2)
             points = np.multiply(points, depth_repeated)
 
+            # # Move points close to surface a little bit below surface
+            # for row in range(0, height):
+            #     for column in range(0, width):
+            #         point = points[row][column]
+            #         deltaY = point[1] + camPose.reshape(-1)[1]
+            #         if deltaY < 0.:
+            #             point *= 1 + (deltaY / point[1])
+            #             point *= 1 + (0.05 / point[1])
+
+
             # Convert from camera frame to world frame
             points += camPose.reshape(-1)
+
+            # Save the y-coordinate of each reconstructed pixel (zero or below resresents the surface)
+            y = points[:,:,1].copy()
+            y = y / (y.max() - y.min())
+            y = np.clip(y, 0, None)
+
+            gray_I8 = (y * 255.9).astype(np.uint8)
+            gray_img = Image.fromarray(gray_I8)
+            gray_img.save(f"./images/archive/y_{captureCount}.jpg")
+
+            rgb = cv2.imread(f"./images/archive/capture_{captureCount}.jpg")
+            # mask = detect_floor(rgb, gray_I8, y, floor_y)
             
+            # for row in range(0, height):
+            #     for column in range(0, width):
+            #         if mask[row][column]:
+            #             point = points[row][column]
+            #             camPoseFlat = camPose.reshape(-1)
+            #             vec = point - camPoseFlat
+            #             points[row][column] =  vec * (1 - (point[1] - floor_y)/vec[1]) + camPoseFlat
+            
+            # Move points 6cm below floor
+            points[:,:,1] -= 0.06
+
             # # Refine midas 3d points based on 3d reconstructed keypoints
             # if captureCount > 0:
             #     keypoints, keypoints_coords = matchPoints(captureCount-1, captureCount)
@@ -531,14 +762,18 @@ def upload_image():
             saveCameraDetails(captureCount, camera)
 
             # Sampling to make the point clould smaller
-            samling_rate = 10
-            points = points[::samling_rate,::samling_rate].astype("float32")
+            sampling_rate = 10
+            points = points[::sampling_rate,::sampling_rate].astype("float32")
 
-            points = points.reshape(-1, 3)
+            # # Flatten 2D array
+            points_flat = points.reshape(-1, 3)
+            
+            # Convert numpy array to list
             salmpled_points = points.tolist()
+            salmpled_points_flat = points_flat.tolist()
 
-            # sampling_height = math.ceil(height / samling_rate)
-            # sampling_width = math.ceil(width / samling_rate)
+            # sampling_height = math.ceil(height / sampling_rate)
+            # sampling_width = math.ceil(width / sampling_rate)
 
             # triangles = []
             # for i in range(0, sampling_height-1):
@@ -552,7 +787,7 @@ def upload_image():
             # triangles = np.stack(triangles, axis=0)
             # mesh_to_glb(points, triangles)
             
-            encoded_data = msgpack.packb([salmpled_points, keypoints])
+            encoded_data = msgpack.packb([salmpled_points_flat, salmpled_points, keypoints])
             return encoded_data
     return render_template("upload_image.html")
     
@@ -565,5 +800,6 @@ def send_uploaded_model(filename=""):
     return send_from_directory(app.config["MODEL_UPLOADS"], filename)
 
 if __name__ == '__main__':
+    init_midas()
     context = ("./keys/fullchain.pem", "./keys/privkey.pem")
     app.run(host = '0.0.0.0', ssl_context = context, port = 5000, debug = True)
