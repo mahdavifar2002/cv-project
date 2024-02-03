@@ -63,8 +63,8 @@ def init_midas():
     global midasmodel, device
 
     # select device
-    # device = torch.device("cuda")
-    device = torch.device("cpu")
+    device = torch.device("cuda")
+    # device = torch.device("cpu")
 
     midas_model_path = "midas/model.pt"
     # midas_model_path = "midas/midas_v21_small_256.pt"
@@ -589,12 +589,12 @@ def detect_floor(rgb_image, gray_image, y, floor_y):
     vote = (vote >= (2*255)).astype(int) * 255
 
     # Save the new segmentation mask to a file
-    cv2.imwrite('./images/archive/0_edges.png', edges)
-    cv2.imwrite('./images/archive/1_mask.png', interest_mask)
-    cv2.imwrite('./images/archive/2_mask_relaxed.png', interest_mask_relaxed)
-    cv2.imwrite('./images/archive/3_mask_segmentation.png', segmentation_mask_density)
-    cv2.imwrite('./images/archive/4_mask_vote.png', vote)
-    cv2.imwrite('./images/archive/5_rgb.png', rgb_image)
+    cv2.imwrite('0_edges.png', edges)
+    cv2.imwrite('1_mask.png', interest_mask)
+    cv2.imwrite('2_mask_relaxed.png', interest_mask_relaxed)
+    cv2.imwrite('3_mask_segmentation.png', segmentation_mask_density)
+    cv2.imwrite('4_mask_vote.png', vote)
+    cv2.imwrite('5_rgb.png', rgb_image)
 
     # If you want to view the masks
     # cv2.imshow('Original Image', rgb_image)
@@ -749,7 +749,7 @@ def upload_image():
             #             points[row][column] =  vec * (1 - (point[1] - floor_y)/vec[1]) + camPoseFlat
             
             # Move points 6cm below floor
-            points[:,:,1] -= 0.06
+            points[:,:,1] -= 0.02
 
             # # Refine midas 3d points based on 3d reconstructed keypoints
             # if captureCount > 0:
