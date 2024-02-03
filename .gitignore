@@ -167,6 +167,7 @@ flask/venv
 flask/models
 flask/images
 flask/keys
+flask/midas/*.pt
 
 # Frontend
 webxr/.vscode

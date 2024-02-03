@@ -173,7 +173,7 @@ function smallTriangle(v0, v1, v2) {
 	return v0.distanceTo(v1) < eps && v0.distanceTo(v2) < eps && v1.distanceTo(v2) < eps;
 }
 
-async function AddMeshFromGrid(grid, scene, color=0x00FF00, opacity=0.2) {
+async function AddMeshFromGrid(grid, scene, color=0x00FF00, opacity=0.0) {
 	grid = await grid;
 
 	// Create array of vertices for the geometry
@@ -334,7 +334,7 @@ async function activateXR() {
 	// Create a scene.
 	const scene = new THREE.Scene();
 
-	const directionalLight = new THREE.DirectionalLight(0xffffff, 1.7);
+	const directionalLight = new THREE.DirectionalLight(0xffffff, 5.5);
 	directionalLight.position.set(10, 15, 10);
 	scene.add(directionalLight);
 
@@ -384,7 +384,8 @@ async function activateXR() {
 
 	let model;
 	// loader.load("./models/astronaut/astronaut.glb", function(gltf) {
-	loader.load("./models/carpet/carpet.glb", function(gltf) {
+	loader.load("./models/cat/cat.glb", function(gltf) {
+	// loader.load("./models/carpet/carpet.glb", function(gltf) {
 	// loader.load("https://immersive-web.github.io/webxr-samples/media/gltf/sunflower/sunflower.gltf", function(gltf) {
 		model = gltf.scene;
 		model.name = "model";
@@ -421,11 +422,31 @@ async function activateXR() {
 		scene.getObjectsByProperty("name", "model").forEach((x) => scene.remove(x));
 	});
 
-	const slider = document.getElementById('slider');
-	slider.addEventListener("input", function() {
-		scene.getObjectsByProperty("name", "model").forEach((x) => x.position.setY(slider.value / 100));
+
+	const checkbox = document.getElementById('checkbox');
+	checkbox.addEventListener("change", function() {
+		var myDiv = document.getElementById('below-buttons');
+		if (checkbox.checked)
+			myDiv.style.visibility = 'hidden';
+		else
+			myDiv.style.visibility = 'visible';
 	});
 
+	const ySlider = document.getElementById('y-slider');
+	ySlider.addEventListener("input", function() {
+		scene.getObjectsByProperty("name", "point").forEach((x) => x.position.setY(ySlider.value / 100));
+	});
+
+	const scaleSlider = document.getElementById('scale-slider');
+	scaleSlider.addEventListener("input", function() {
+		var scaleFactor = Math.pow(2, scaleSlider.value / 33);
+		scene.getObjectsByProperty("name", "model").forEach((x) => x.scale.set(scaleFactor, scaleFactor, scaleFactor));
+	});
+
+	const rotateSlider = document.getElementById('rotate-slider');
+	rotateSlider.addEventListener("input", function() {
+		scene.getObjectsByProperty("name", "model").forEach((x) => x.setRotationFromAxisAngle(new THREE.Vector3(0, 1, 0), rotateSlider.value / 100));
+	});
 	
 
 	// Track the previous frame time.

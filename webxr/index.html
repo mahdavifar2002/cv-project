@@ -9,23 +9,23 @@
   <link rel='stylesheet' href='style.css'>
   <title>Hello WebXR!</title>
 
-  <!-- <script type="importmap">
+  <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@v0.159.0/build/three.js",
-        "three/addons/": "https://unpkg.com/three@v0.159.0/examples/jsm/"
+        "three": "https://unpkg.com/three@v0.161.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@v0.161.0/examples/jsm/"
       }
     }
-  </script> -->
+  </script>
 
-  <script type="importmap">
+  <!-- <script type="importmap">
     {
       "imports": {
         "three": "./three.js/build/three.module.min.js",
         "three/addons/": "./three.js/examples/jsm/"
       }
     }
-  </script>
+  </script> -->
 
   <!-- mobile console -->
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
@@ -41,14 +41,18 @@
 <!-- <button style="z-index:2;position:absolute;width:12rem;">Click Me!</button> -->
 <div id="overlay">
   <div class="overlay">
-    <div>
+    <div class="top-buttons">
       <button id="xr-button" onclick="onXrButtonClicked()" class="xr-button">Enter AR</button>
+      <label><input id="checkbox" type="checkbox"> Hide settings</label>
     </div>
-    <div class="below-buttons">
+    <div id="below-buttons" class="below-buttons">
+      <div class="range"><label>Floor <input id="y-slider" type="range" min="-50" max="50" value="0"></label></div>
+      <div class="range"><label>Scale <input id="scale-slider" type="range" min="-100" max="100" value="0"></label></div>
+      <div class="range"><label>Rotate <input id="rotate-slider" type="range" min="-314" max="314" value="0"></label></div>
+
       <button id="add-button" class="xr-button">Add Model</button>
       <button id="clear-button" class="xr-button">Clear Scene</button>
       <button id="depth-button" class="xr-button">Add Depth</button>
-      <input id="slider" type="range" min="-50" max="50" value="0" style="width: 40vw; min-width: 150px;">
     </div>
   </div>
 </div>

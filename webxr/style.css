@@ -1,5 +1,10 @@
-.xr-button {
+* {
 	font-family: "Karla", sans-serif;
+	font-size: 18px;
+	color: rgb(80, 168, 252);
+}
+
+.xr-button {
 	border: rgb(80, 168, 252) 2px solid;
 	border-radius: 2px;
 	box-sizing: border-box;
@@ -11,9 +16,15 @@
 	display: inline-block;
 	position: relative;
 	cursor: pointer;
-	font-size: 18px;
-	color: rgb(80, 168, 252);
 	background-color: rgba(255, 255, 255, 0.7);
+}
+
+.range {
+	vertical-align: left;
+	min-width: 150px;
+	width: 40vw;
+	margin: 2vh 6vw 2vh 0;
+	min-height: 55px;
 }
 
 .overlay {
@@ -21,6 +32,11 @@
 	top: 5vh;
 	left: 5vw;
 	right: 5vw;
+}
+
+.top-buttons {
+	position: fixed;
+	top: 5vh;
 }
 
 .below-buttons {
