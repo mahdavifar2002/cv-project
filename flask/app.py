@@ -63,8 +63,8 @@ def init_midas():
     global midasmodel, device
 
     # select device
-    device = torch.device("cuda")
-    # device = torch.device("cpu")
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    print(f"device is {device}")
 
     midas_model_path = "midas/model.pt"
     # midas_model_path = "midas/midas_v21_small_256.pt"
