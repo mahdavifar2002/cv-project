@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 function onSecondFirstFrame(time, delta) {
 	if (Math.floor(time/1000) != Math.floor((time - delta)/1000)) {
@@ -133,7 +133,7 @@ function toNDC(p_camera, vp) {
 	return new THREE.Vector3(ndc_x, ndc_y, ndc_z);
 }
 
-async function addSmallCubesAt(points, scene, color=0x00FF00, opacity=0.2) {
+async function addSmallCubesAt(points, scene, color=0x00FF00, opacity=0.0) {
 	points = await points;
 
 	// var pointsArray = [];
@@ -420,6 +420,55 @@ async function activateXR() {
 	clearButton.addEventListener("click", function() {
 		scene.getObjectsByProperty("name", "point").forEach((x) => scene.remove(x));
 		scene.getObjectsByProperty("name", "model").forEach((x) => scene.remove(x));
+	});
+	
+	const downloadButton = document.getElementById('download-button');
+	downloadButton.addEventListener("click", function() {
+		const options = {
+		};
+
+		const link = document.createElement( 'a' );
+		link.style.display = 'none';
+		document.body.appendChild( link );
+		
+		function save( blob, filename ) {
+			link.href = URL.createObjectURL( blob );
+			link.download = filename;
+			link.click();
+		}
+		
+		function saveString( text, filename ) {
+			save( new Blob( [ text ], { type: 'text/plain' } ), filename );
+
+		}
+
+		function saveArrayBuffer( buffer, filename ) {
+			save( new Blob( [ buffer ], { type: 'application/octet-stream' } ), filename );
+
+		}
+
+		const exporter = new GLTFExporter();
+		exporter.parse(
+			scene,
+			function ( gltf ) {
+				if ( gltf instanceof ArrayBuffer ) {
+
+					saveArrayBuffer( gltf, 'scene.glb' );
+
+				} else {
+
+					const output = JSON.stringify( gltf, null, 2 );
+					console.log( output );
+					saveString( output, 'scene.gltf' );
+
+				}
+			},
+			function ( error ) {
+				console.log( 'An error happened:' );
+				console.log( error );
+			},
+			options
+			);		
 	});
 
 
